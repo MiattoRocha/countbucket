@@ -1,12 +1,5 @@
-// --------------------------------------------------------
-// Para ver o log do programa em formato amigável, use:
-// $ npm install -g bunyan
-// $ node app.js
-// $ cat log_xyz.log | bunyan -o short
-// --------------------------------------------------------
-
 /* dependências */
-var bunyan = require('bunyan'),
+var logger = require('winston'),
     prompt = require('prompt'),
     exec = require('child_process').exec,
     bitbucket = require('bitbucket-api'),
@@ -26,18 +19,19 @@ var render = function (frmt, data) {
 
 /* configura o logger */
 var fn = render('log_{date}.log', { date: moment().format('YYYY-MM-DD_HH-mm-ss') });
-var log = bunyan.createLogger({
-    name: 'Baseline',
-    streams: [
-        {
-            level: 'trace',
-            stream: process.stdout,
-        },
-        {
-            level: 'trace',
-            path: fn
-        }
-    ]
+
+logger.addColors({ debug: 'green', info: 'cyan', silly: 'magenta', warn:  'yellow', error: 'red' });
+logger.remove(logger.transports.Console);
+logger.add(logger.transports.Console, { level: 'debug', colorize: true });
+
+var formatter = function (args) {
+    return args.message;
+}
+
+logger.add(logger.transports.File, {
+    filename: fn,
+    json: false,
+    formatter: formatter
 });
 
 /* consulta o nome de usuário nas configurações do git */
@@ -88,7 +82,7 @@ var getCredentials = function (callback) {
             },
             {
                 name: 'exibirVazios',
-                default: false
+                default: 'false'
             },
             {
                 name: 'cortarStrings',
@@ -99,7 +93,7 @@ var getCredentials = function (callback) {
         prompt.start();
         prompt.get(input, function (err, result) {
             if (err) {
-                log.trace('ERRO: você deve digitar seu nome de usuário e senha do Bitbucket!');
+                logger.info('ERRO: você deve digitar seu nome de usuário e senha do Bitbucket!');
                 return;
             }
         
@@ -138,7 +132,7 @@ var fetchCommits = function (callback, repo, commits, hash) {
         hash = 'HEAD';
     }
     
-    //log.trace('FROM ' + hash.substring(0, 12));
+    //logger.info('FROM ' + hash.substring(0, 12));
     changes.get(15, hash, function (err, result) {
         if (err) {
             callback({
@@ -155,10 +149,10 @@ var fetchCommits = function (callback, repo, commits, hash) {
                 var item = result.changesets[i];
                 
                 var cur = moment(item.utctimestamp).tz('UTC');
-                //log.trace('node: ' + item.node + ', cur = ' + cur.format() + ', inicial = ' + this.filtersConfig.dataInicial.format() + ', final = ' + this.filtersConfig.dataFinal.format());
+                //logger.info('node: ' + item.node + ', cur = ' + cur.format() + ', inicial = ' + this.filtersConfig.dataInicial.format() + ', final = ' + this.filtersConfig.dataFinal.format());
                 
                 if (cur.isBetween(this.filtersConfig.dataInicial, this.filtersConfig.dataFinal)) {
-                    //log.trace('yes A');
+                    //logger.info('yes A');
                     needMoreCommits = true;
                     
                     var message = item.message.replace('\n', '');
@@ -178,10 +172,10 @@ var fetchCommits = function (callback, repo, commits, hash) {
                         message: message
                     });
                 } else if (cur.isAfter(this.filtersConfig.dataInicial)) {
-                    //log.trace('yes B');
+                    //logger.info('yes B');
                     needMoreCommits = true;
                 } else {
-                    //log.trace('no C');
+                    //logger.info('no C');
                     needMoreCommits = false;
                 }
             }
@@ -227,13 +221,13 @@ var main = function() {
             cortarStrings: config.cortarStrings
         };
         
-        log.trace('Executando script de geração de baseline...');
-        log.trace(this.filtersConfig);
+        logger.info('Executando script de geração de baseline...');
+        logger.info(this.filtersConfig);
         
         repositories.getAll(function (err, data) {
             if (err) {
-                log.trace(err);
-                log.trace('Please check your username, password and internet connection.');
+                logger.info(err);
+                logger.info('Please check your username, password and internet connection.');
                 return;
             }
             
@@ -249,17 +243,17 @@ var main = function() {
                             slug: cur.name.toLowerCase()
                         }, function (err, repo) {
                             fetchCommits(function (data) {
-                                if (data.commits.length !== 0 || this.filtersConfig.exibirVazios) {
-                                    log.trace('=== Repo: ' + data.owner + '/' + data.slug + ', Commits: ' + data.commits.length + ' ===');
+                                if (data.commits.length !== 0 || this.filtersConfig.exibirVazios.toLowerCase() === 'true') {
+                                    logger.info('=== Repo: ' + data.owner + '/' + data.slug + ', Commits: ' + data.commits.length + ' ===');
                                     
                                     if (data.error) {
-                                        log.trace('  ERRO: ' + data.error);
+                                        logger.info('  ERRO: ' + data.error);
                                     }
                                     
                                     for (var j = 0; j < data.commits.length; j++) {
-                                        log.trace(render('  {branch}|{node}|{shortdate}|{author}|{message}|', data.commits[j]));
+                                        logger.info(render('  {branch}|{node}|{shortdate}|{author}|{message}|', data.commits[j]));
                                     }
-                                    log.trace(' ');
+                                    logger.info(' ');
                                 }
                             }, repo);
                         });
