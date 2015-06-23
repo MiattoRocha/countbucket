@@ -1,0 +1,19 @@
+{
+  "name": "baseline",
+  "version": "1.0.0",
+  "description": "",
+  "main": "app.js",
+  "dependencies": {
+    "bitbucket-api": "0.0.7",
+    "bunyan": "^1.4.0",
+    "moment": "^2.10.3",
+    "moment-timezone": "^0.4.0",
+    "prompt": "^0.2.14"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC"
+}
