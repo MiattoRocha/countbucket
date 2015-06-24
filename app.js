@@ -73,12 +73,12 @@ var getCredentials = function (callback) {
             },
             {
                 name: 'dataInicial',
-                default: moment().tz('UTC').subtract(1, 'months').format('DD/MM/YYYY'),
+                default: moment().subtract(1, 'months').format('DD/MM/YYYY'),
                 warning: 'Digite a data inicial!'
             },
             {
                 name: 'dataFinal',
-                default: moment().tz('UTC').format('DD/MM/YYYY'),
+                default: moment().subtract(1, 'months').format('DD/MM/YYYY'),
                 warning: 'Digite a data final!'
             },
             {
@@ -227,8 +227,8 @@ var main = function() {
         var user = client.user();
         var repositories = user.repositories();
         this.filtersConfig = {
-            dataInicial: moment(config.dataInicial, 'DD/MM/YYYY').tz('UTC'),
-            dataFinal: moment(config.dataFinal, 'DD/MM/YYYY').tz('UTC'),
+            dataInicial: moment(config.dataInicial, 'DD/MM/YYYY HH:mm:ss'),
+            dataFinal: moment(config.dataFinal, 'DD/MM/YYYY HH:mm:ss'),
             prefixo: config.prefixo,
             exibirVazios: config.exibirVazios,
             cortarStrings: config.cortarStrings
@@ -237,8 +237,8 @@ var main = function() {
         logger.info('Executando script de geração de baseline...');
         logger.info('Configuração do script:');
         logger.info(render(' * usuário: {username}', credentials));
-        logger.info(render(' * dataInicial: {data}', { data: this.filtersConfig.dataInicial.format('DD/MM/YYYY') } ));
-        logger.info(render(' * dataFinal: {data}', { data: this.filtersConfig.dataFinal.format('DD/MM/YYYY') } ));
+        logger.info(render(' * dataInicial: {data}', { data: this.filtersConfig.dataInicial.format('DD/MM/YYYY HH:mm:ss') } ));
+        logger.info(render(' * dataFinal: {data}', { data: this.filtersConfig.dataFinal.format('DD/MM/YYYY HH:mm:ss') } ));
         logger.info(render(' * prefixo: {prefixo}', this.filtersConfig));
         logger.info(render(' * exibirVazios: {exibirVazios}', this.filtersConfig));
         logger.info(render(' * cortarStrings: {cortarStrings}', this.filtersConfig));
@@ -257,7 +257,6 @@ var main = function() {
                 var filtered = data.filter(filterDateRange);
                 logger.info(render('Filtrando {qtde} repositórios...', { qtde: filtered.length }));
                 logger.info(' ');
-                
                 for (var i = 0; i < filtered.length; i++) {
                     var cur = filtered[i];
                     
