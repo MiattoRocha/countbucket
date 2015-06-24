@@ -306,7 +306,7 @@ process.on('SIGNINT', function () {
 
 process.on('uncaughtException', function (err) {
     logger.error('Exceção não tratada:');
-    logger.error(e.stack);
+    logger.error(err.stack);
     process.exit(99);
 });
 
