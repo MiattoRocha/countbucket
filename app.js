@@ -245,6 +245,7 @@ var main = function() {
         logger.info(' ');
         
         repositories.getAll(function (err, data) {
+			appStart = moment().tz('UTC');
             if (err) {
                 logger.error(err);
                 logger.warn('Please check your username, password and internet connection.');
@@ -289,7 +290,7 @@ var main = function() {
     });
 }
 
-var appStart = moment().tz('UTC');
+var appStart = null;
 
 /* prepara os handlers de saída do programa */
 process.on('exit', function () {
