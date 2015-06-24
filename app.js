@@ -20,16 +20,21 @@ var render = function (frmt, data) {
 /* configura o logger */
 var fn = render('log_{date}.log', { date: moment().format('YYYY-MM-DD_HH-mm-ss') });
 
-logger.addColors({ debug: 'green', info: 'cyan', silly: 'magenta', warn:  'yellow', error: 'red' });
-logger.remove(logger.transports.Console);
-logger.add(logger.transports.Console, { level: 'debug', colorize: true });
-
 var formatter = function (args) {
     return args.message;
 }
 
+logger.addColors({ debug: 'green', info: 'cyan', silly: 'magenta', warn:  'yellow', error: 'red' });
+logger.remove(logger.transports.Console);
+
+logger.add(logger.transports.Console, {
+    level: 'info',
+    colorize: true
+});
+
 logger.add(logger.transports.File, {
     filename: fn,
+    level: 'info',
     json: false,
     formatter: formatter
 });
@@ -68,7 +73,7 @@ var getCredentials = function (callback) {
             },
             {
                 name: 'dataInicial',
-                default: moment().tz('UTC').subtract(14, 'days').format('DD/MM/YYYY'),
+                default: moment().tz('UTC').subtract(1, 'months').format('DD/MM/YYYY'),
                 warning: 'Digite a data inicial!'
             },
             {
@@ -86,14 +91,14 @@ var getCredentials = function (callback) {
             },
             {
                 name: 'cortarStrings',
-                default: 50
+                default: 0
             }
         ];
         
         prompt.start();
         prompt.get(input, function (err, result) {
             if (err) {
-                logger.info('ERRO: você deve digitar seu nome de usuário e senha do Bitbucket!');
+                logger.error('ERRO: você deve digitar seu nome de usuário e senha do Bitbucket!');
                 return;
             }
         
@@ -132,7 +137,7 @@ var fetchCommits = function (callback, repo, commits, hash) {
         hash = 'HEAD';
     }
     
-    //logger.info('FROM ' + hash.substring(0, 12));
+    logger.debug('FROM ' + hash.substring(0, 12));
     changes.get(15, hash, function (err, result) {
         if (err) {
             callback({
@@ -149,10 +154,15 @@ var fetchCommits = function (callback, repo, commits, hash) {
                 var item = result.changesets[i];
                 
                 var cur = moment(item.utctimestamp).tz('UTC');
-                //logger.info('node: ' + item.node + ', cur = ' + cur.format() + ', inicial = ' + this.filtersConfig.dataInicial.format() + ', final = ' + this.filtersConfig.dataFinal.format());
+                logger.debug('node: ' + item.node + ', cur = ' + cur.format() + ', inicial = ' + this.filtersConfig.dataInicial.format() + ', final = ' + this.filtersConfig.dataFinal.format());
                 
-                if (cur.isBetween(this.filtersConfig.dataInicial, this.filtersConfig.dataFinal)) {
-                    //logger.info('yes A');
+                /* começou a paginação por este commit, parece que é o fim da linha. */
+                if (item.raw_node == hash) {
+                    logger.debug('no D - ' + item.raw_node + ' x ' + hash);
+                    needMoreCommits = false;
+                /* verifica se o commit atual está entre o período solicitado. */
+                } else if (cur.isBetween(this.filtersConfig.dataInicial, this.filtersConfig.dataFinal)) {
+                    logger.debug('yes A');
                     needMoreCommits = true;
                     
                     var message = item.message.replace('\n', '');
@@ -171,11 +181,14 @@ var fetchCommits = function (callback, repo, commits, hash) {
                         shortdate: moment(item.utctimestamp).tz('UTC').format('DD/MM/YYYY'),
                         message: message
                     });
+                /* verifica se o commit atual está em um período superior a data inicial, mesmo não estando dentro da data final.
+                 * isto indica que nas próximas páginas podemos encontrar resultados dentro do período. */
                 } else if (cur.isAfter(this.filtersConfig.dataInicial)) {
-                    //logger.info('yes B');
+                    logger.debug('yes B');
                     needMoreCommits = true;
+                /* não está mais dentro do período solicitado. */
                 } else {
-                    //logger.info('no C');
+                    logger.debug('no C');
                     needMoreCommits = false;
                 }
             }
@@ -222,32 +235,44 @@ var main = function() {
         };
         
         logger.info('Executando script de geração de baseline...');
-        logger.info(this.filtersConfig);
+        logger.info('Configuração do script:');
+        logger.info(render(' * usuário: {username}', credentials));
+        logger.info(render(' * dataInicial: {data}', { data: this.filtersConfig.dataInicial.format('DD/MM/YYYY') } ));
+        logger.info(render(' * dataFinal: {data}', { data: this.filtersConfig.dataFinal.format('DD/MM/YYYY') } ));
+        logger.info(render(' * prefixo: {prefixo}', this.filtersConfig));
+        logger.info(render(' * exibirVazios: {exibirVazios}', this.filtersConfig));
+        logger.info(render(' * cortarStrings: {cortarStrings}', this.filtersConfig));
+        logger.info(' ');
         
         repositories.getAll(function (err, data) {
             if (err) {
-                logger.info(err);
-                logger.info('Please check your username, password and internet connection.');
+                logger.error(err);
+                logger.warn('Please check your username, password and internet connection.');
                 return;
             }
             
             if (data) {
+                logger.info(render('Total de {qtde} repositórios encontrados.', { qtde: data.length }));
                 var filtered = data.filter(filterDateRange);
+                logger.info(render('Filtrando {qtde} repositórios...', { qtde: filtered.length }));
+                logger.info(' ');
                 
                 for (var i = 0; i < filtered.length; i++) {
                     var cur = filtered[i];
                     
                     if (validarPrefixo(cur.name)) {
+                        logger.info('Consultando repositório ' + cur.name + '...');
                         client.getRepository({
                             owner: cur.owner,
                             slug: cur.name.toLowerCase()
                         }, function (err, repo) {
                             fetchCommits(function (data) {
                                 if (data.commits.length !== 0 || this.filtersConfig.exibirVazios.toLowerCase() === 'true') {
+                                    logger.info(' ');
                                     logger.info('=== Repo: ' + data.owner + '/' + data.slug + ', Commits: ' + data.commits.length + ' ===');
                                     
                                     if (data.error) {
-                                        logger.info('  ERRO: ' + data.error);
+                                        logger.error('  ERRO: ' + data.error);
                                     }
                                     
                                     for (var j = 0; j < data.commits.length; j++) {
@@ -263,6 +288,27 @@ var main = function() {
         });
     });
 }
+
+var appStart = moment().tz('UTC');
+
+/* prepara os handlers de saída do programa */
+process.on('exit', function () {
+    var appFinish = moment().tz('UTC');
+    var diff = appFinish.diff(appStart, 'ms');
+    logger.info(render('Programa finalizado em {tempo}s.', { tempo: (diff / 1000) }));
+});
+
+process.on('SIGNINT', function () {
+    logger.info('[CTRL + C]');
+    logger.info('Programa cancelado!');
+    process.exit(2);
+});
+
+process.on('uncaughtException', function (err) {
+    logger.error('Exceção não tratada:');
+    logger.error(e.stack);
+    process.exit(99);
+});
 
 /* executa o programa */
 main();
