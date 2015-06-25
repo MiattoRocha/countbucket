@@ -1,5 +1,5 @@
 /* dependências */
-var logger = require('winston'),
+var winston = require('winston'),
     prompt = require('prompt'),
     exec = require('child_process').exec,
     bitbucket = require('bitbucket-api'),
@@ -18,26 +18,42 @@ var render = function (frmt, data) {
     );
 };
 
-/* configura o logger */
-var fn = render('log_{date}.log', { date: moment().format('YYYY-MM-DD_HH-mm-ss') });
+/* configura os loggers */
+var logFile = render('log_{date}.log', { date: moment().format('YYYY-MM-DD_HH-mm-ss') });
+var outFile = render('out_{date}.log', { date: moment().format('YYYY-MM-DD_HH-mm-ss') });
 
-var formatter = function (args) {
+var rawFormatter = function (args) {
     return args.message;
 }
 
-logger.remove(logger.transports.Console);
-
-logger.add(logger.transports.Console, {
-    level: 'info',
-    colorize: true
+/* inicializa os loggers */
+var logger = new (winston.Logger)({
+    transports: [
+        new (winston.transports.Console)({ colorize: true }),
+        new (winston.transports.File)({ filename: logFile, json: false, formatter: rawFormatter })
+    ]
 });
 
-logger.add(logger.transports.File, {
-    filename: fn,
-    level: 'info',
-    json: false,
-    formatter: formatter
+var _output = new (winston.Logger)({
+    levels: {
+        headers: 0,
+        commits: 1
+    },
+    transports: [
+        new (winston.transports.File)({ level: 'commits', filename: outFile, json: false, formatter: rawFormatter })
+    ]
 });
+
+var output = {
+    header: function (s) {
+        _output.log('headers', s);
+        logger.info(s);
+    },
+    commit: function (s) {
+        _output.log('commits', s);
+        logger.info(s);
+    }
+};
 
 /* consulta o nome de usuário nas configurações do git */
 var getUsername = function (callback) {
@@ -289,15 +305,15 @@ var main = function() {
                 for (var i = 0; i < filtered.length; i++) {
                     var cur = filtered[i];
                     
-                    //logger.info('Consultando repositório ' + cur.name + '...');
+                    logger.info('Consultando repositório ' + cur.name + '...');
                     client.getRepository({
                         owner: cur.owner,
                         slug: cur.name.toLowerCase()
                     }, function (err, repo) {
                         fetchCommits(function (data) {
                             if (data.commits.length !== 0 || this.filtersConfig.exibirVazios.toLowerCase() === 'true') {
-                                //logger.info(' ');
-                                logger.info('=== Repo: ' + data.owner + '/' + data.slug + ', Commits: ' + data.commits.length + ' ===');
+                                logger.info(' ');
+                                output.header('=== Repo: ' + data.owner + '/' + data.slug + ', Commits: ' + data.commits.length + ' ===');
 
                                 if (data.error) {
                                     logger.error('  ERRO: ' + data.error);
@@ -317,9 +333,9 @@ var main = function() {
                                         shortdate: item.shortdate,
                                         message: item.message
                                     };
-                                    logger.info(render('  {owner}|{repo}|{branch}|{node}|{shortdate}|{author}|{message}|', model));
+                                    output.commit(render('{owner}|{repo}|{branch}|{node}|{shortdate}|{author}|{message}|', model));
                                 }
-                                //logger.info(' ');
+                                logger.info(' ');
                             }
                         }, repo);
                     });
