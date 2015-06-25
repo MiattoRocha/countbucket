@@ -29,15 +29,15 @@ var rawFormatter = function (args) {
 /* inicializa os loggers */
 var logger = new (winston.Logger)({
     transports: [
-        new (winston.transports.Console)({ colorize: true }),
-        new (winston.transports.File)({ filename: logFile, json: false, formatter: rawFormatter })
+        new (winston.transports.Console)({ colorize: true })
     ]
 });
 
 var _output = new (winston.Logger)({
     levels: {
         headers: 0,
-        commits: 1
+        commits: 1,
+        info: 2
     },
     transports: [
         new (winston.transports.File)({ level: 'commits', filename: outFile, json: false, formatter: rawFormatter })
@@ -51,6 +51,10 @@ var output = {
     },
     commit: function (s) {
         _output.log('commits', s);
+        logger.info(s);
+    },
+    info: function (s) {
+        _output.log('info', s);
         logger.info(s);
     }
 };
@@ -108,6 +112,10 @@ var getCredentials = function (callback) {
             {
                 name: 'cortarStrings',
                 default: 0
+            },
+            {
+                name: 'logGeral',
+                default: 'false'
             }
         ];
         
@@ -127,7 +135,8 @@ var getCredentials = function (callback) {
                     dataFinal: result.dataFinal,
                     prefixo: result.prefixo,
                     exibirVazios: result.exibirVazios,
-                    cortarStrings: result.cortarStrings
+                    cortarStrings: result.cortarStrings,
+                    logGeral: result.logGeral
                 });
             }
         });
@@ -275,18 +284,24 @@ var main = function() {
             dataFinal: moment(config.dataFinal, 'DD/MM/YYYY HH:mm:ss'),
             prefixo: config.prefixo,
             exibirVazios: config.exibirVazios,
-            cortarStrings: config.cortarStrings
+            cortarStrings: config.cortarStrings,
+            logGeral: config.logGeral
         };
         
-        logger.info('Executando script de geração de baseline...');
-        logger.info('Configuração do script:');
-        logger.info(render(' * usuário: {username}', credentials));
-        logger.info(render(' * dataInicial: {data}', { data: this.filtersConfig.dataInicial.format('DD/MM/YYYY HH:mm:ss') } ));
-        logger.info(render(' * dataFinal: {data}', { data: this.filtersConfig.dataFinal.format('DD/MM/YYYY HH:mm:ss') } ));
-        logger.info(render(' * prefixo: {prefixo}', this.filtersConfig));
-        logger.info(render(' * exibirVazios: {exibirVazios}', this.filtersConfig));
-        logger.info(render(' * cortarStrings: {cortarStrings}', this.filtersConfig));
-        logger.info(' ');
+        if (this.filtersConfig.logGeral.toLowerCase() === 'true') {
+            logger.add(winston.transports.File, { filename: logFile, json: false, formatter: rawFormatter });
+        }
+        
+        output.info('Executando script de geração de baseline...');
+        output.info('Configuração do script:');
+        output.info(render(' * usuário: {username}', credentials));
+        output.info(render(' * dataInicial: {data}', { data: this.filtersConfig.dataInicial.format('DD/MM/YYYY HH:mm:ss') } ));
+        output.info(render(' * dataFinal: {data}', { data: this.filtersConfig.dataFinal.format('DD/MM/YYYY HH:mm:ss') } ));
+        output.info(render(' * prefixo: {prefixo}', this.filtersConfig));
+        output.info(render(' * exibirVazios: {exibirVazios}', this.filtersConfig));
+        output.info(render(' * cortarStrings: {cortarStrings}', this.filtersConfig));
+        output.info(render(' * logGeral: {logGeral}', this.filtersConfig));
+        output.info(' ');
         
         repositories.getAll(function (err, data) {
 			appStart = moment().tz('UTC');
@@ -333,7 +348,7 @@ var main = function() {
                                         shortdate: item.shortdate,
                                         message: item.message
                                     };
-                                    output.commit(render('{owner}|{repo}|{branch}|{node}|{shortdate}|{author}|{message}|', model));
+                                    output.commit(render('{owner}|{repo}|{branch}|{raw_node}|{shortdate}|{raw_author}|{message}|', model));
                                 }
                                 logger.info(' ');
                             }
