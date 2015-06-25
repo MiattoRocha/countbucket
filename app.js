@@ -6,6 +6,7 @@ var logger = require('winston'),
     moment = require('moment-timezone');
 
 var filtersConfig = {};
+var appStart = null;
 
 /* helper para interpolação de strings */
 var render = function (frmt, data) {
@@ -24,7 +25,6 @@ var formatter = function (args) {
     return args.message;
 }
 
-logger.addColors({ debug: 'green', info: 'cyan', silly: 'magenta', warn:  'yellow', error: 'red' });
 logger.remove(logger.transports.Console);
 
 logger.add(logger.transports.Console, {
@@ -78,12 +78,12 @@ var getCredentials = function (callback) {
             },
             {
                 name: 'dataFinal',
-                default: moment().subtract(1, 'months').format('DD/MM/YYYY'),
+                default: moment().format('DD/MM/YYYY'),
                 warning: 'Digite a data final!'
             },
             {
                 name: 'prefixo',
-                default: ''
+                default: process.env.COUNTBUCKET_PREFIXO
             },
             {
                 name: 'exibirVazios',
@@ -118,10 +118,33 @@ var getCredentials = function (callback) {
     });
 }
 
+/* valida o prefixo de um repositório */
+var validarPrefixo = function (slug) {
+    if (!this.filtersConfig.prefixo || this.filtersConfig.prefixo.length === 0) {
+        return true;
+    }
+    
+    var test = slug.substr(0, this.filtersConfig.prefixo.length);
+    if (test.toLowerCase().localeCompare(this.filtersConfig.prefixo.toLowerCase()) == 0) {
+        return true;
+    }
+    
+    return false;
+}
+
 /* filtra os repositórios com atualização no período desejado */
-function filterDateRange(obj) {
+function filterRepos(obj) {
     var lastUpdated = moment(obj.utc_last_updated);
-    return lastUpdated.isAfter(this.filtersConfig.dataInicial);
+    
+    if (!lastUpdated.isAfter(this.filtersConfig.dataInicial)) {
+        return false;
+    }
+    
+    if (!validarPrefixo(obj.name)) {
+        return false;
+    }
+    
+    return true;
 }
 
 /* consulta os commits de um repositório */
@@ -140,12 +163,24 @@ var fetchCommits = function (callback, repo, commits, hash) {
     logger.debug('FROM ' + hash.substring(0, 12));
     changes.get(15, hash, function (err, result) {
         if (err) {
+            /* parse error pode acontecer caso a resposta JSON do Bitbucket venha com problemas, neste caso, vamos tentar novamente */
+            if (err.message.toLowerCase().indexOf('parse error') != -1) {
+                logger.error(render('Parse error at {owner}/{slug}, trying again...', repo));
+                setTimeout(function() {
+                    fetchCommits(callback, repo, commits, hash);
+                }, 3000);
+                return;
+            }
+            
+            /* outros erros não tratados */
             callback({
                 owner: repo.owner,
                 slug: repo.slug,
                 commits: commits,
                 error: err
             });
+            logger.error(render('Error at {owner}/slug}!', repo));
+            throw err;
             return;
         }
         
@@ -194,8 +229,15 @@ var fetchCommits = function (callback, repo, commits, hash) {
             }
         }
         
+        var next = result.changesets[0].raw_node;
+        
+        if (!next) {
+            logger.info(render("Need more commits but it's EOF for {owner}/{slug}!", repo));
+            needMoreCommits = false;
+        }
+        
         if (needMoreCommits) {
-            fetchCommits(callback, repo, commits, result.changesets[0].raw_node);
+            fetchCommits(callback, repo, commits, next);
         } else {
             callback({
                 owner: repo.owner,
@@ -204,20 +246,6 @@ var fetchCommits = function (callback, repo, commits, hash) {
             });
         }
     });
-}
-
-/* valida o prefixo de um repositório */
-var validarPrefixo = function (slug) {
-    if (!this.filtersConfig.prefixo || this.filtersConfig.prefixo.length === 0) {
-        return true;
-    }
-    
-    var test = slug.substr(0, this.filtersConfig.prefixo.length);
-    if (test.toLowerCase().localeCompare(this.filtersConfig.prefixo.toLowerCase()) == 0) {
-        return true;
-    }
-    
-    return false;
 }
 
 /* fluxo do programa */
@@ -248,48 +276,58 @@ var main = function() {
 			appStart = moment().tz('UTC');
             if (err) {
                 logger.error(err);
-                logger.warn('Please check your username, password and internet connection.');
+                logger.warning('Please check your username, password and internet connection.');
                 return;
             }
             
             if (data) {
                 logger.info(render('Total de {qtde} repositórios encontrados.', { qtde: data.length }));
-                var filtered = data.filter(filterDateRange);
+                var filtered = data.filter(filterRepos);
                 logger.info(render('Filtrando {qtde} repositórios...', { qtde: filtered.length }));
                 logger.info(' ');
+                
                 for (var i = 0; i < filtered.length; i++) {
                     var cur = filtered[i];
                     
-                    if (validarPrefixo(cur.name)) {
-                        logger.info('Consultando repositório ' + cur.name + '...');
-                        client.getRepository({
-                            owner: cur.owner,
-                            slug: cur.name.toLowerCase()
-                        }, function (err, repo) {
-                            fetchCommits(function (data) {
-                                if (data.commits.length !== 0 || this.filtersConfig.exibirVazios.toLowerCase() === 'true') {
-                                    logger.info(' ');
-                                    logger.info('=== Repo: ' + data.owner + '/' + data.slug + ', Commits: ' + data.commits.length + ' ===');
-                                    
-                                    if (data.error) {
-                                        logger.error('  ERRO: ' + data.error);
-                                    }
-                                    
-                                    for (var j = 0; j < data.commits.length; j++) {
-                                        logger.info(render('  {branch}|{node}|{shortdate}|{author}|{message}|', data.commits[j]));
-                                    }
-                                    logger.info(' ');
+                    //logger.info('Consultando repositório ' + cur.name + '...');
+                    client.getRepository({
+                        owner: cur.owner,
+                        slug: cur.name.toLowerCase()
+                    }, function (err, repo) {
+                        fetchCommits(function (data) {
+                            if (data.commits.length !== 0 || this.filtersConfig.exibirVazios.toLowerCase() === 'true') {
+                                //logger.info(' ');
+                                logger.info('=== Repo: ' + data.owner + '/' + data.slug + ', Commits: ' + data.commits.length + ' ===');
+
+                                if (data.error) {
+                                    logger.error('  ERRO: ' + data.error);
                                 }
-                            }, repo);
-                        });
-                    }
+
+                                for (var j = 0; j < data.commits.length; j++) {
+                                    var item = data.commits[j];
+                                    var model = {
+                                        owner: repo.owner,
+                                        repo: repo.name,
+                                        branch: item.branch,
+                                        node: item.node,
+                                        raw_node: item.raw_node,
+                                        author: item.author,
+                                        raw_author: item.raw_author,
+                                        utctimestamp: item.utctimestamp,
+                                        shortdate: item.shortdate,
+                                        message: item.message
+                                    };
+                                    logger.info(render('  {owner}|{repo}|{branch}|{node}|{shortdate}|{author}|{message}|', model));
+                                }
+                                //logger.info(' ');
+                            }
+                        }, repo);
+                    });
                 }
             }
         });
     });
 }
-
-var appStart = null;
 
 /* prepara os handlers de saída do programa */
 process.on('exit', function () {
