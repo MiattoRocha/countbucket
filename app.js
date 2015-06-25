@@ -225,7 +225,7 @@ var fetchCommits = function (callback, repo, commits, hash) {
                     logger.debug('yes A');
                     needMoreCommits = true;
                     
-                    var message = item.message.replace('\n', '');
+                    var message = item.message.replace(/\n?\r?/g, '');
                     if (this.filtersConfig.cortarStrings != 0) {
                         message = message.substr(0, this.filtersConfig.cortarStrings);
                     }
