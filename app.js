@@ -116,6 +116,10 @@ var getCredentials = function (callback) {
             {
                 name: 'logGeral',
                 default: 'false'
+            },
+			{
+                name: 'ignorarMerges',
+                default: 'true'
             }
         ];
         
@@ -136,7 +140,8 @@ var getCredentials = function (callback) {
                     prefixo: result.prefixo,
                     exibirVazios: result.exibirVazios,
                     cortarStrings: result.cortarStrings,
-                    logGeral: result.logGeral
+                    logGeral: result.logGeral,
+					ignorarMerges: result.ignorarMerges
                 });
             }
         });
@@ -222,25 +227,31 @@ var fetchCommits = function (callback, repo, commits, hash) {
                     needMoreCommits = false;
                 /* verifica se o commit atual está entre o período solicitado. */
                 } else if (cur.isBetween(this.filtersConfig.dataInicial, this.filtersConfig.dataFinal)) {
-                    logger.debug('yes A');
-                    needMoreCommits = true;
-                    
-                    var message = item.message.replace(/\n?\r?/g, '');
-                    if (this.filtersConfig.cortarStrings != 0) {
-                        message = message.substr(0, this.filtersConfig.cortarStrings);
-                    }
-                    
-                    commits.push({
-                        repo: repo.name,
-                        branch: item.branch,
-                        node: item.node,
-                        raw_node: item.raw_node,
-                        author: item.author,
-                        raw_author: item.raw_author,
-                        utctimestamp: item.utctimestamp,
-                        shortdate: moment(item.utctimestamp).tz('UTC').format('DD/MM/YYYY'),
-                        message: message
-                    });
+					if((this.filtersConfig.ignorarMerges.toLowerCase() === 'true') && (item.parents.length >  1))
+					{
+						logger.debug('item é um merge');
+					}
+					else{
+						logger.debug('yes A');
+						needMoreCommits = true;
+						
+						var message = item.message.replace(/\n?\r?/g, '');
+						if (this.filtersConfig.cortarStrings != 0) {
+							message = message.substr(0, this.filtersConfig.cortarStrings);
+						}
+						
+						commits.push({
+							repo: repo.name,
+							branch: item.branch,
+							node: item.node,
+							raw_node: item.raw_node,
+							author: item.author,
+							raw_author: item.raw_author,
+							utctimestamp: item.utctimestamp,
+							shortdate: moment(item.utctimestamp).tz('UTC').format('DD/MM/YYYY'),
+							message: message
+						});
+					}
                 /* verifica se o commit atual está em um período superior a data inicial, mesmo não estando dentro da data final.
                  * isto indica que nas próximas páginas podemos encontrar resultados dentro do período. */
                 } else if (cur.isAfter(this.filtersConfig.dataInicial)) {
@@ -285,7 +296,8 @@ var main = function() {
             prefixo: config.prefixo,
             exibirVazios: config.exibirVazios,
             cortarStrings: config.cortarStrings,
-            logGeral: config.logGeral
+            logGeral: config.logGeral,
+			ignorarMerges: config.ignorarMerges
         };
         
         if (this.filtersConfig.logGeral.toLowerCase() === 'true') {
@@ -301,6 +313,7 @@ var main = function() {
         output.info(render(' * exibirVazios: {exibirVazios}', this.filtersConfig));
         output.info(render(' * cortarStrings: {cortarStrings}', this.filtersConfig));
         output.info(render(' * logGeral: {logGeral}', this.filtersConfig));
+		output.info(render(' * ignorarMerges: {ignorarMerges}', this.filtersConfig));
         output.info(' ');
         
         repositories.getAll(function (err, data) {
